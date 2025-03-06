@@ -142,10 +142,11 @@ import (
 var serverURL = "http://localhost:8080"
 
 type Task struct {
-	ID        int     `json:"id"`
-	Arg1      float64 `json:"arg1"`
-	Arg2      float64 `json:"arg2"`
-	Operation string  `json:"operation"`
+	ID             int     `json:"id"`
+	Arg1           float64 `json:"arg1"`
+	Arg2           float64 `json:"arg2"`
+	Operation      string  `json:"operation"`
+	Operation_time int     `json:"operation_time"`
 }
 
 func getTask() (*Task, error) {
@@ -206,7 +207,7 @@ func sendResult(taskID int, result float64) error {
 
 func compute(task Task) (float64, error) {
 	var result float64
-
+	time.Sleep(time.Duration(task.Operation_time) * time.Millisecond)
 	switch task.Operation {
 	case "+":
 		result = task.Arg1 + task.Arg2

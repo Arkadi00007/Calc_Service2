@@ -4,8 +4,10 @@ import (
 	"awesomeProject/pkg/calculation"
 	"encoding/json"
 	"github.com/gorilla/mux"
+	"github.com/joho/godotenv"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 )
@@ -19,10 +21,11 @@ type Expression struct {
 }
 
 type Task struct {
-	ID        int     `json:"id"`
-	Arg1      float64 `json:"arg1"`
-	Arg2      float64 `json:"arg2"`
-	Operation string  `json:"operation"`
+	ID             int     `json:"id"`
+	Arg1           float64 `json:"arg1"`
+	Arg2           float64 `json:"arg2"`
+	Operation      string  `json:"operation"`
+	Operation_time int     `json:"operation_time"`
 }
 
 var expressions = make(map[int]*Expression)
@@ -184,13 +187,16 @@ func createTasks(id int, expression *[]string) *Task {
 		v := (*expression)[i]
 		taskID := id
 		if calculation.IsOperator(v[0]) {
+			ttime := opTime(v[0])
+
 			task = &Task{
-				ID:        taskID,
-				Arg1:      Ara(strconv.ParseFloat((*expression)[i-2], 64)),
-				Arg2:      Ara(strconv.ParseFloat((*expression)[i-1], 64)),
-				Operation: string(v[0]),
+				ID:             taskID,
+				Arg1:           Ara(strconv.ParseFloat((*expression)[i-2], 64)),
+				Arg2:           Ara(strconv.ParseFloat((*expression)[i-1], 64)),
+				Operation:      string(v[0]),
+				Operation_time: ttime,
 			}
-			log.Println(task)
+			//log.Println(task)
 
 			return task
 
@@ -209,4 +215,26 @@ func RunServer() {
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe("localhost:8080", r))
+}
+
+func opTime(op uint8) int {
+	if err := godotenv.Load(); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	switch op {
+	case '+':
+		ara, _ := strconv.Atoi(os.Getenv("TIME_ADDITION_MS"))
+		return ara
+	case '-':
+		ara, _ := strconv.Atoi(os.Getenv("TIME_SUBTRACTION_MS"))
+		return ara
+	case '*':
+		ara, _ := strconv.Atoi(os.Getenv("TIME_MULTIPLICATIONS_MS"))
+		return ara
+	case '/':
+		ara, _ := strconv.Atoi(os.Getenv("TIME_DIVISIONS_MS"))
+		return ara
+	}
+	panic("invalid operation when attempted to send task")
 }
