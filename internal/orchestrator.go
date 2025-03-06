@@ -46,7 +46,8 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 		postfix, err := calculation.Calc(expression)
 
 		if err != nil {
-			http.Error(w, "Invalid expression", http.StatusBadRequest)
+			http.Error(w, "Invalid expression", http.StatusUnprocessableEntity)
+			return
 		}
 		mu.Lock()
 		expressions[idCounter] = &Expression{
@@ -83,49 +84,13 @@ func handleGetExpressions(w http.ResponseWriter, r *http.Request) {
 		response, _ := json.MarshalIndent(map[string][]map[string]interface{}{"expressions": exprList}, "", "    ")
 		w.Write(response)
 	} else {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		http.Error(w, "Method not allowed", http.StatusInternalServerError)
 	}
 
 }
 
 func handleGetTask(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	//if r.Method == http.MethodPost {
-	//	mu.Lock()
-	//	defer mu.Unlock()
-	//	type Result struct {
-	//		TaskID int    `json:"taskid"`
-	//		Result string `json:"result"`
-	//	}
-	//	var result Result
-	//	err := json.NewDecoder(r.Body).Decode(&result)
-	//	if err != nil {
-	//		http.Error(w, "Invalid input", http.StatusBadRequest)
-	//		return
-	//	}
-	//
-	//	for _, expr := range expressions {
-	//
-	//		if expr.ID == result.TaskID {
-	//			for j := 0; j < len(*expr.Expression); j++ {
-	//				v := (*(*expr).Expression)[j]
-	//				if calculation.IsOperator(v[0]) {
-	//					(*(*expr).Expression) = append(append((*(*expr).Expression)[:j-2], result.Result), (*(*expr).Expression)[j+1:]...)
-	//					break
-	//				}
-	//			}
-	//
-	//			if len((*expr.Expression)) == 1 {
-	//				num, err := strconv.ParseFloat(result.Result, 64)
-	//				if err == nil {
-	//					expr.Status = "completed"
-	//					expr.Result = num
-	//				}
-	//				break
-	//			}
-	//		}
-	//	}
-	//}
 	if r.Method == http.MethodPost {
 		type Result struct {
 			TaskID int    `json:"taskid"`
