@@ -14,6 +14,9 @@ go mod tidy
 
 (запуск агента и оркестратора)
 ````bash
+cd Calc_Service2
+````
+````bash
 go run cmd/main.go
 ````
 По умолчанию порт - ":8080"
