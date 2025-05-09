@@ -2,15 +2,35 @@ package internal
 
 import (
 	"awesomeProject/pkg/calculation"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
+
+var jwtKey = []byte("your_secret_key") // ключ для подписи JWT
+var db *sql.DB
+
+type contextKey string
+
+const loginContextKey contextKey = "login"
+
+type User struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
+}
 
 type Expression struct {
 	ID         int       `json:"id"`
@@ -18,6 +38,7 @@ type Expression struct {
 	Status     string    `json:"status"`
 	Result     float64   `json:"result,omitempty"`
 	SubStatus  string    `json:"sub_status,omitempty"`
+	Login      string    `json:"login"`
 }
 
 type Task struct {
@@ -30,7 +51,51 @@ type Task struct {
 
 var expressions = make(map[int]*Expression)
 var mu sync.Mutex
+var mumu sync.Mutex
 var idCounter int
+
+func GenerateJWT(login string) (string, error) {
+	token := jwt.New(jwt.SigningMethodHS256)
+	claims := token.Claims.(jwt.MapClaims)
+	claims["login"] = login
+	claims["exp"] = time.Now().Add(24 * time.Hour).Unix() // токен истекает через 24 часа
+	return token.SignedString(jwtKey)
+}
+
+func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tokenString := r.Header.Get("Authorization")
+		if tokenString == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Missing token"})
+			return
+		}
+		tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("Unexpected signing method")
+			}
+			return jwtKey, nil
+		})
+
+		if err != nil || !token.Valid {
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid token"})
+			return
+		}
+
+		claims := token.Claims.(jwt.MapClaims)
+		login, ok := claims["login"].(string)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), loginContextKey, login)
+		next(w, r.WithContext(ctx))
+	}
+}
 
 func handleCalculate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -44,7 +109,7 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		expression := req["expression"]
-		idCounter++
+		login := r.Context().Value(loginContextKey).(string)
 
 		postfix, err := calculation.Calc(expression)
 
@@ -53,10 +118,18 @@ func handleCalculate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		mu.Lock()
+		res, errrr := db.Exec("INSERT INTO expressions (expression,login,status,result) VALUES (?,?,?,?)", expression, login, "processing", 0)
+		temp, _ := res.LastInsertId()
+		idCounter = int(temp)
 		expressions[idCounter] = &Expression{
 			ID:         idCounter,
 			Expression: &postfix,
 			Status:     "processing",
+			Login:      login,
+		}
+		if errrr != nil {
+			log.Println("ошибка при записи в дб ", errrr)
+			return
 		}
 		mu.Unlock()
 
@@ -74,12 +147,15 @@ func handleGetExpressions(w http.ResponseWriter, r *http.Request) {
 	defer mu.Unlock()
 	if r.Method == http.MethodGet {
 		var exprList []map[string]interface{}
+		login := r.Context().Value(loginContextKey).(string)
 		for _, expr := range expressions {
-			exprList = append(exprList, map[string]interface{}{
-				"id":     expr.ID,
-				"status": expr.Status,
-				"result": expr.Result,
-			})
+			if expr.Login == login {
+				exprList = append(exprList, map[string]interface{}{
+					"id":     expr.ID,
+					"status": expr.Status,
+					"result": expr.Result,
+				})
+			}
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -127,6 +203,14 @@ func handleGetTask(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				expr.Status = "completed"
 				expr.Result = num
+
+				_, err := db.Exec("UPDATE  expressions SET  status=?, result=? WHERE id=? ", "completed", expr.Result, expr.ID)
+
+				if err != nil {
+					http.Error(w, "Error saving result to database", http.StatusInternalServerError)
+					return
+				}
+
 			} else {
 				http.Error(w, "Invalid result format", http.StatusBadRequest)
 				return
@@ -196,7 +280,6 @@ func createTasks(id int, expression *[]string) *Task {
 				Operation:      string(v[0]),
 				Operation_time: ttime,
 			}
-			//log.Println(task)
 
 			return task
 
@@ -207,11 +290,15 @@ func createTasks(id int, expression *[]string) *Task {
 
 func RunServer() {
 	r := mux.NewRouter()
-	r.HandleFunc("/api/v1/calculate", handleCalculate)
-	r.HandleFunc("/api/v1/expressions", handleGetExpressions)
+	initDB()
+	loadDataFromDB()
+	r.HandleFunc("/api/v1/register", handleRegister).Methods("POST")
+	r.HandleFunc("/api/v1/login", handleLogin).Methods("POST")
+	r.HandleFunc("/api/v1/calculate", AuthMiddleware(handleCalculate))
+	r.HandleFunc("/api/v1/expressions", AuthMiddleware(handleGetExpressions))
 	r.HandleFunc("/internal/task", handleGetTask)
 
-	r.HandleFunc("/api/v1/expressions/{id}", handleGetExpressionByID)
+	r.HandleFunc("/api/v1/expressions/{id}", AuthMiddleware(handleGetExpressionByID))
 
 	log.Println("Server started on :8080")
 	log.Fatal(http.ListenAndServe("localhost:8080", r))
