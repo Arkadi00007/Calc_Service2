@@ -2,8 +2,8 @@
 
 ## Описание
 
-Этот проект реализует распределённый калькулятор с оркестратором и агентами.Оркестратор принимает математические выражения, разбивает их на операции и раздаёт агентам для вычисления.
-
+Этот проект реализует распределённый калькулятор с оркестратором и агентами. Оркестратор принимает математические выражения, разбивает их на операции и раздаёт агентам для вычисления. Сервис поддерживает JWT-аутентификацию и хранение данных о выражениях в базе данных.
+Перед использованием пользователь должен пройти регистрацию и авторизацию.
 ---
 
 ## Как запустить
@@ -26,16 +26,23 @@ go run cmd/main.go
 
 ###  Как пользоваться:
 (все адреса начинаются с "localhost:8080")
-- Пользователь может вводить математические выражения через консоль по этому эндпоинту - /api/v1/calculate.
-- Пользователь может получить информацию о выражении сделав GET запрос по этому эндпоинту - /api/v1/expressions или получить сведения о конкретном выражении по его id  - /api/v1/expressions/:id
+1. Регистрация пользователя.
+- Отправьте POST-запрос на эндпоинт /api/v1/register для создания нового аккаунта.
+2. Авторизация
+- Получите JWT-токен, выполнив POST-запрос на /api/v1/login с вашими учётными данными 
+3. Ввод выражения для вычисления 
+- Отправьте математическое выражение на обработку с помощью POST-запроса на /api/v1/calculate
+4. Пользователь может получить информацию о выражении сделав GET запрос по этому эндпоинту - /api/v1/expressions или получить сведения о конкретном выражении по его id  - /api/v1/expressions/:id
 - Результат вычисления или ошибка отображаются в консоли.
 ---
 
 ### Эндпоинты
-- /api/v1/calculate - сюда пользователь вводит арифметическое выражение и получает id 
-- /api/v1/expressions - сюда пользователь может сделать  GET запрос и получить данные о всех ранее введённых выражениях
-- /api/v1/expressions/:id - GET запрос (можно узнать данные только определённого выражения)
-- /internal/task - отсюда агент получает простые выражения и сюда же возвращает ответ
+- /api/v1/register - Регистрация нового пользователя({ "login": , "password": })
+- POST /api/v1/login - Авторизация пользователя.При успешном входе возвращает JWT-токен, который используется для доступа к защищённым маршрутам API.Токен необходимо указывать в заголовке Authorization: Bearer <ваш_токен> при последующих запросах
+- /api/v1/calculate - сюда пользователь вводит(POST запрос) арифметическое выражение и получает id(в теле запроса должен быть JWT токен) 
+- /api/v1/expressions - по этому эндпоинту пользователь может сделать  GET запрос и получить данные о всех ранее введённых выражениях(в теле запроса должен быть JWT токен)
+- /api/v1/expressions/:id - GET запрос (можно узнать данные только определённого выражения)(в теле запроса должен быть JWT токен)
+- /internal/task - отсюда агент получает простые выражения и сюда же возвращает ответ(для оркестратора и агента)
 ---
 #### Пример тела запроса (/api/v1/calculate):
 ```
@@ -55,63 +62,121 @@ curl --location 'localhost/api/v1/calculate' \
 
 # Примеры запросов:
 
-### 1.Запрос на http://localhost:8080/api/v1/calculate (код 201)
+### Регистрация (http://localhost:8080/api/v1/register)
+
+- Запрос:
+```
+curl -X POST http://localhost:8080/api/v1/register \
+-H "Content-Type: application/json" \
+-d '{"username": "testuser", "password": "securepassword"}'
+```
+
+- Ответ при успешной регистрации (HTTP статус 201)
+```
+{
+  "message": "Registered "
+}
+```
+- Ответ, если такой пользователь уже существует(HTTP статус 409)
+```
+{
+  "error": "Username already exists"
+}
+```
+Ответ при ошибке валидации (HTTP статус 400):
+```
+{
+  "error": "Invalid input"
+}
+
+```
+
+---
+
+### 2. Авторизация пользователя
+- Запрос:
+```
+curl -X POST http://localhost:8080/api/v1/login \
+-H "Content-Type: application/json" \
+-d '{"username": user", "password": "secret"}'
+```
+- Ответ при успешной авторизации (HTTP статус 200) — возвращается JWT токен:
+```
+{
+  "token": "your.jwt.token.here"
+}
+```
+- Ответ при ошибке (неверные данные — неправильный логин или пароль)  (HTTP статус 401):
+```
+{
+  "error": "Invalid credentials"
+}
+```
+
+
+---
+### 3. Запрос на http://localhost:8080/api/v1/calculate (код 201)
+- Запрос(в теле запроса укажите ваш JWT токен)
 ```
 curl -X POST http://localhost:8080/api/v1/calculate \
 -H "Content-Type: application/json" \
+-H "Authorization: Bearer ваш_jwt_токен" \
 -d '{"expression":"6 + 3 * 5"}'
 ```
 
-Ответ:
+- Ответ:
 ```
 {
 "id": 1
 }
 ```
 ---
-Запрос (код 422)
+- Запрос (код 422)
 
 ```
 curl -X POST http://localhost:8080/api/v1/calculate \
 -H "Content-Type: application/json" \
+-H "Authorization: Bearer ваш_jwt_токен" \
 -d '{"expression":"6 + r * 5"}'
+
 ```
 
-Ответ:
+- Ответ:
 ```
 Invalid expression
 ```
 
 ---
-Запрос (код 500)
+- Запрос (код 500)
 
 ```
 curl -X GET http://localhost:8080/api/v1/expressions \
 -H "Content-Type: application/json" \
--d '{"expression":"6 +  5"}'
+-H "Authorization: Bearer ваш_jwt_токен" \
+-d '{"expression":"6 + 5"}'
 ```
 
-Ответ:
-
+- Ответ:
 ```
 Method not allowed
 ```
-
-### 2.Запрос на http://localhost:8080/api/v1/expressions (код 200)
-
-До этого, например, запрос
+---
+### 4. Запрос на http://localhost:8080/api/v1/expressions (код 200)
+### Объязательно укажите ваш JWT токен в теле запроса
+Например, делаем запрос
 ```
 curl -X POST http://localhost:8080/api/v1/calculate \
 -H "Content-Type: application/json" \
--d '{"expression":"6 + 3 * 5"}'
+-H "Authorization: Bearer ваш_jwt_токен" \
+-d '{"expression": "6 + 3 * 5"}'
 ``` 
-потом
+потом получаем выражения:
 ```
 curl -X GET http://localhost:8080/api/v1/expressions \
--H "Content-Type: application/json"
+-H "Authorization: Bearer ваш_jwt_токен"
 ```
 
-Ответ:
+- Ответ:
 ```
 {
     "expressions": [{
@@ -121,37 +186,40 @@ curl -X GET http://localhost:8080/api/v1/expressions \
         }]
 }
 ```
-
-Запрос (код 405)
+---
+- Запрос (код 405)
 ````
 curl -X POST http://localhost:8080/api/v1/expressions \
 -H "Content-Type: application/json"
 ````
 
-Ответ:
+- Ответ:
 ```
  Method not allowed
 ```
 
-
+---
 
 ### 3.Запрос на http://localhost:8080/api/v1/expressions/{id} (код 200)
-(до этого запроса делаем всё тот же запрос:
+(делаем всё тот же запрос:
 
 ```
 curl -X POST http://localhost:8080/api/v1/calculate \
 -H "Content-Type: application/json" \
--d '{"expression":"6 + 3 * 5"}'
+-H "Authorization: Bearer ваш_jwt_токен" \
+-d '{"expression": "6 + 3 * 5"}'
+
 ``` 
 )
 
-Потом
+- Получаем выражение по id:
 ```
 curl -X GET http://localhost:8080/api/v1/expressions/1 \
--H "Content-Type: application/json"
+-H "Authorization: Bearer ваш_jwt_токен"
+
 ```
 
-Ответ:
+- Ответ:
 ```
 {
     "id": 3,
