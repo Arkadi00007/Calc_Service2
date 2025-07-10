@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"awesomeProject/pkg/calculation"
+	"Calc_Service2/pkg/calculation"
 	"database/sql"
 	"encoding/json"
 	"log"

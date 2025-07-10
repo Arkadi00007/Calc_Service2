@@ -1,8 +1,8 @@
 package main
 
 import (
-	"awesomeProject/agent"
-	"awesomeProject/internal"
+	"Calc_Service2/agent"
+	"Calc_Service2/internal"
 	"github.com/joho/godotenv"
 	"log"
 	"os"

@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package proto;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "./;proto";
+
+
+
+message TaskRequest {
+  int64 id = 1;
+  double operand1 = 2;
+  double operand2 = 3;
+  string operator = 4;
+  int32 operation_time = 5; // для симуляции задержки
+}
+
+message TaskResponse {
+  int64 id = 1;
+  double result = 2;
+  bool success = 3;
+  string error = 4;
+}
+
+message TaskReply {
+  bool has_task = 1;
+  TaskRequest task = 2;
+}
+
+service Orchestrator {
+  rpc GetTask (google.protobuf.Empty) returns (TaskReply);
+  rpc SendResult (TaskResponse) returns (google.protobuf.Empty);
+}

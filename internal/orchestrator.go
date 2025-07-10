@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"awesomeProject/pkg/calculation"
+	"Calc_Service2/pkg/calculation"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -168,72 +168,73 @@ func handleGetExpressions(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func handleGetTask(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method == http.MethodPost {
-		type Result struct {
-			TaskID int    `json:"taskid"`
-			Result string `json:"result"`
-		}
-
-		var result Result
-		err := json.NewDecoder(r.Body).Decode(&result)
-		if err != nil {
-			http.Error(w, "Invalid input", http.StatusBadRequest)
-			return
-		}
-
-		expr, exists := expressions[result.TaskID]
-		if !exists {
-			http.Error(w, "Task not found", http.StatusNotFound)
-			return
-		}
-
-		for i := 2; i < len(*expr.Expression); i++ {
-			if calculation.IsOperator((*expr.Expression)[i][0]) {
-
-				*expr.Expression = append((*expr.Expression)[:i-2], append([]string{result.Result}, (*expr.Expression)[i+1:]...)...)
-				expr.SubStatus = ""
-				break
-			}
-		}
-
-		if len(*expr.Expression) == 1 {
-			num, err := strconv.ParseFloat(result.Result, 64)
-			if err == nil {
-				expr.Status = "completed"
-				expr.Result = num
-
-				_, err := db.Exec("UPDATE  expressions SET  status=?, result=? WHERE id=? ", "completed", expr.Result, expr.ID)
-
-				if err != nil {
-					http.Error(w, "Error saving result to database", http.StatusInternalServerError)
-					return
-				}
-
-			} else {
-				http.Error(w, "Invalid result format", http.StatusBadRequest)
-				return
-			}
-		}
-
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	if r.Method == http.MethodGet {
-
-		for _, expr := range expressions {
-			if expr.Status == "processing" && expr.SubStatus != "waiting" {
-				expr.SubStatus = "waiting"
-				tasks := createTasks(expr.ID, (expr.Expression))
-				w.WriteHeader(http.StatusOK)
-
-				json.NewEncoder(w).Encode(*tasks)
-				return
-			}
-		}
-	}
-}
+//
+//func handleGetTask(w http.ResponseWriter, r *http.Request) {
+//	w.Header().Set("Content-Type", "application/json")
+//	if r.Method == http.MethodPost {
+//		type Result struct {
+//			TaskID int    `json:"taskid"`
+//			Result string `json:"result"`
+//		}
+//
+//		var result Result
+//		err := json.NewDecoder(r.Body).Decode(&result)
+//		if err != nil {
+//			http.Error(w, "Invalid input", http.StatusBadRequest)
+//			return
+//		}
+//
+//		expr, exists := expressions[result.TaskID]
+//		if !exists {
+//			http.Error(w, "Task not found", http.StatusNotFound)
+//			return
+//		}
+//
+//		for i := 2; i < len(*expr.Expression); i++ {
+//			if calculation.IsOperator((*expr.Expression)[i][0]) {
+//
+//				*expr.Expression = append((*expr.Expression)[:i-2], append([]string{result.Result}, (*expr.Expression)[i+1:]...)...)
+//				expr.SubStatus = ""
+//				break
+//			}
+//		}
+//
+//		if len(*expr.Expression) == 1 {
+//			num, err := strconv.ParseFloat(result.Result, 64)
+//			if err == nil {
+//				expr.Status = "completed"
+//				expr.Result = num
+//
+//				_, err := db.Exec("UPDATE  expressions SET  status=?, result=? WHERE id=? ", "completed", expr.Result, expr.ID)
+//
+//				if err != nil {
+//					http.Error(w, "Error saving result to database", http.StatusInternalServerError)
+//					return
+//				}
+//
+//			} else {
+//				http.Error(w, "Invalid result format", http.StatusBadRequest)
+//				return
+//			}
+//		}
+//
+//		w.WriteHeader(http.StatusOK)
+//		return
+//	}
+//	if r.Method == http.MethodGet {
+//
+//		for _, expr := range expressions {
+//			if expr.Status == "processing" && expr.SubStatus != "waiting" {
+//				expr.SubStatus = "waiting"
+//				tasks := createTasks(expr.ID, (expr.Expression))
+//				w.WriteHeader(http.StatusOK)
+//
+//				json.NewEncoder(w).Encode(*tasks)
+//				return
+//			}
+//		}
+//	}
+//}
 
 func handleGetExpressionByID(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -289,14 +290,16 @@ func createTasks(id int, expression *[]string) *Task {
 }
 
 func RunServer() {
+	go runGRPC()
 	r := mux.NewRouter()
 	initDB()
 	loadDataFromDB()
+
 	r.HandleFunc("/api/v1/register", handleRegister).Methods("POST")
 	r.HandleFunc("/api/v1/login", handleLogin).Methods("POST")
 	r.HandleFunc("/api/v1/calculate", AuthMiddleware(handleCalculate))
 	r.HandleFunc("/api/v1/expressions", AuthMiddleware(handleGetExpressions))
-	r.HandleFunc("/internal/task", handleGetTask)
+	//r.HandleFunc("/internal/task", handleGetTask)
 
 	r.HandleFunc("/api/v1/expressions/{id}", AuthMiddleware(handleGetExpressionByID))
 
